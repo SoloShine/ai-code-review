@@ -1,0 +1,16 @@
+#!/bin/sh
+# ai-review pre-commit hook
+# This script runs ai-review as a pre-commit hook to check staged changes
+
+# Ensure ai-review command is available
+if ! command -v ai-review >/dev/null 2>&1; then
+    echo "Error: ai-review command not found. Make sure ai-review is installed and in your PATH."
+    exit 1
+fi
+
+# Run ai-review in pre-commit mode
+# This will check only for severe issues that should block commits
+ai-review check --pre-commit
+
+# Exit with the same code that ai-review returned
+exit $?

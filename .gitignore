@@ -1,0 +1,35 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+
+.eggs/
+*.manifest
+*.spec
+
+.env
+.venv/
+env/
+venv/
+
+.idea/
+.vscode/
+*.swp
+*.swo
+
+.ai-review/
+.ai-review.yaml
+
+*.log
+*.tmp
+
+# Dev/test artifacts
+final_test.py
+simple_test.py
+test_imports.py
+
+# Design docs and handoff notes (not needed in repo)
+HANDOFF.md

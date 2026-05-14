@@ -1,0 +1,33 @@
+#!/bin/sh
+# ai-review post-commit hook
+# This script runs ai-review asynchronously after commit to review the full commit
+
+# Ensure ai-review command is available
+if ! command -v ai-review >/dev/null 2>&1; then
+    echo "Error: ai-review command not found. Make sure ai-review is installed and in your PATH."
+    exit 1
+fi
+
+# Get the current commit SHA
+COMMIT_SHA=$(git rev-parse HEAD)
+
+if [ -z "$COMMIT_SHA" ]; then
+    echo "Error: Could not get current commit SHA"
+    exit 1
+fi
+
+# Run ai-review in async mode for post-commit review
+# This will perform a full review of the commit without blocking
+# The results will be logged to .ai-review/ directory
+
+echo "Starting async review for commit: $COMMIT_SHA"
+
+# Run in background with nohup (POSIX compatible)
+# This allows the commit to complete while the review runs
+nohup ai-review check --async --commit "$COMMIT_SHA" > ".ai-review/post-commit-$COMMIT_SHA.log" 2>&1 &
+
+# Log the process ID for potential monitoring
+echo $! > ".ai-review/post-commit-$COMMIT_SHA.pid"
+
+# Exit immediately - don't block the commit process
+exit 0

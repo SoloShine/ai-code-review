@@ -1,0 +1,44 @@
+# .ai-review.yaml 配置模板
+# 运行 ai-review init 自动生成，此文件仅供参考
+
+version: 1
+
+# ═══ LLM 配置 ═══
+llm:
+  # 选择后端: ollama / openai_compatible
+  backend: "ollama"
+
+  ollama:
+    base_url: "http://localhost:11434"
+    model: "qwen2.5-coder:7b"
+    timeout: 120
+
+  openai_compatible:
+    base_url: "https://api.deepseek.com/v1"
+    api_key_env: "DEEPSEEK_API_KEY"
+    model: "deepseek-chat"
+    timeout: 60
+
+# ═══ 审查模式 ═══
+# strict:   pre-commit 完整审查 (15-60秒)
+# balanced: pre-commit 快筛 + post-commit 异步 (推荐)
+mode: "balanced"
+
+# ═══ 规则目录 ═══
+rules:
+  dirs:
+    - "rules/"
+
+# ═══ 文件过滤 ═══
+exclude:
+  - "*.lock"
+  - "*.min.js"
+  - "*.min.css"
+  - "*.png"
+  - "*.jpg"
+  - "*.svg"
+  - "*.ico"
+  - "package-lock.json"
+  - "yarn.lock"
+  - ".env*"
+  - ".gitignore"

@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ai-review --help)",
+      "Bash(ai-review config-show *)",
+      "Bash(PYTHONIOENCODING=utf-8 ai-review config-show)",
+      "Bash(ai-review inbox *)",
+      "Bash(powershell -Command \"[Environment]::GetEnvironmentVariable\\('ZHIPU_API_KEY', 'User'\\)\")",
+      "Bash(export ZHIPU_API_KEY=$\\(powershell -Command \"[Environment]::GetEnvironmentVariable\\('ZHIPU_API_KEY', 'User'\\)\"\\))",
+      "Bash(ai-review check *)",
+      "Bash(python -c ' *)"
+    ]
+  }
+}

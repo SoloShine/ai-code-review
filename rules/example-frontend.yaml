@@ -1,0 +1,103 @@
+# 前端开发审查规范
+name: "Frontend Review Rules"
+description: "前端 JS/Vue/HTML/CSS 代码审查规则"
+
+rules:
+  - id: "no-settimeout"
+    title: "禁止使用 setTimeout 处理时序性问题"
+    severity: "error"
+    enabled: true
+    applies_to:
+      extensions: [".js", ".ts", ".vue"]
+    description: |
+      setTimeout 依赖时间猜测，不可靠且难以维护。
+      时序性问题统一使用 Promise 或回调函数处理。
+    bad_example: |
+      setTimeout(function () {
+          invented.init.render();
+      }, 500);
+    good_example: |
+      new Promise(resolve => {
+          invented.init.target();
+          resolve();
+      }).then(() => {
+          invented.init.render();
+      });
+
+  - id: "debounce-high-frequency"
+    title: "高频操作添加防抖机制"
+    severity: "warning"
+    enabled: true
+    applies_to:
+      extensions: [".js", ".ts", ".vue"]
+    description: |
+      以下场景必须添加防抖：数据新增操作、搜索框输入触发请求、表格 change 事件。
+      使用 lodash 的 _.debounce，建议 300ms。
+    bad_example: |
+      $("#searchInput").on("input", function () {
+          invented.event.search();
+      });
+    good_example: |
+      var debouncedSearch = _.debounce(function () {
+          invented.event.search();
+      }, 300);
+      $("#searchInput").on("input", debouncedSearch);
+
+  - id: "no-hardcoded-height"
+    title: "禁止写死主视口高度"
+    severity: "warning"
+    enabled: true
+    applies_to:
+      extensions: [".css", ".html", ".vue"]
+    description: |
+      主视口必须撑满可用空间，使用 flex: 1 或 calc() 代替固定像素值。
+    bad_example: |
+      .container {
+          height: 500px;
+      }
+    good_example: |
+      .container {
+          display: flex;
+          flex: 1;
+          min-height: 0;
+      }
+
+  - id: "no-kendo-prefix"
+    title: "禁止自定义 class 使用 k- 前缀"
+    severity: "error"
+    enabled: true
+    applies_to:
+      extensions: [".html", ".css", ".js", ".vue"]
+    description: |
+      k- 为 Kendo UI 保留命名空间，自定义 class 使用该前缀会引发样式冲突。
+    bad_example: |
+      <div class="k-container">...</div>
+    good_example: |
+      <div class="search-container">...</div>
+
+  - id: "promise-catch"
+    title: "Promise 链必须包含 catch"
+    severity: "warning"
+    enabled: true
+    applies_to:
+      extensions: [".js", ".ts", ".vue"]
+    description: |
+      所有 Promise 链必须以 .catch() 结尾，防止未捕获的异常。
+    bad_example: |
+      fetch('/api/data')
+          .then(res => res.json())
+          .then(data => render(data));
+    good_example: |
+      fetch('/api/data')
+          .then(res => res.json())
+          .then(data => render(data))
+          .catch(err => console.error('Failed:', err));
+
+  - id: "no-console-log"
+    title: "禁止提交 console.log"
+    severity: "info"
+    enabled: false
+    applies_to:
+      extensions: [".js", ".ts", ".vue"]
+    description: |
+      console.log 调试语句不应提交到代码库。默认关闭，团队可自行开启。
