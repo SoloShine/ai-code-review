@@ -26,6 +26,10 @@ venv/
 *.log
 *.tmp
 
+node_modules/
+docs/.vitepress/dist/
+docs/.vitepress/cache/
+
 # Dev/test artifacts
 final_test.py
 simple_test.py
