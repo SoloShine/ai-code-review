@@ -28,6 +28,7 @@ export default defineConfig({
           items: [
             { text: '什么是 AI Code Review', link: '/guide/getting-started' },
             { text: '快速开始', link: '/guide/quick-start' },
+            { text: 'AI Agent 一键配置', link: '/guide/ai-agent-setup' },
           ],
         },
         {
