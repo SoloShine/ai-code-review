@@ -14,17 +14,12 @@ AI Code Review - Skill 安装器
 
 import argparse
 import sys
-import os
+from pathlib import Path
 
 # Fix Windows console encoding
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-import os
-import platform
-import sys
-from pathlib import Path
-
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 SKILL_DIR = SCRIPT_DIR / "ai-review-setup"
@@ -32,10 +27,6 @@ SKILL_FILE = SKILL_DIR / "SKILL.md"
 ADAPTERS_DIR = SKILL_DIR / "adapters"
 HOME = Path.home()
 CWD = Path.cwd()
-
-
-def detect_os():
-    return platform.system()
 
 
 def read_file(path):
@@ -49,29 +40,29 @@ def read_skill():
 
 
 def read_adapter(agent_id):
-    return read_file(ADAPTERS_DIR / f"{agent_id}.yaml")
+    """读取 adapter 文件，如果不存在则从 AGENTS 定义的内联 adapter 获取。"""
+    path = ADAPTERS_DIR / f"{agent_id}.yaml"
+    if path.exists():
+        return read_file(path)
+    cfg = AGENTS.get(agent_id, {})
+    return cfg.get("inline_adapter", "")
 
 
 def build_content(agent_id):
     """拼接 adapter 头部 + SKILL.md 内容。"""
     skill = read_skill()
-    adapter = read_adapter(agent_id)
+    adapter = read_adapter(agent_id).strip()
 
-    # 清理 adapter 中的注释行
-    adapter_lines = [l for l in adapter.splitlines()
-                     if not l.strip().startswith("# Copilot adapter")
-                     and not l.strip().startswith("# Cline adapter")
-                     and not l.strip().startswith("# OpenCode adapter")
-                     and not l.strip().startswith("# Aider adapter")
-                     and l.strip() != "# AI Code Review 配置指令"]
-    adapter_clean = "\n".join(adapter_lines).strip()
-
-    if adapter_clean:
-        return adapter_clean + "\n\n" + skill
+    if adapter:
+        return adapter + "\n\n" + skill
     return skill
 
 
 # ── Agent 定义 ──────────────────────────────────────────────
+#
+# inline_adapter: agent 需要的 frontmatter/头部内容。
+# 如果 agent 的 adapter.yaml 文件存在则优先使用文件，否则用内联的。
+# 不需要头部的 agent（纯 markdown 追加）设 inline_adapter 为空字符串。
 
 AGENTS = {
     "claude-code": {
@@ -84,6 +75,14 @@ AGENTS = {
         ],
         "detect": [HOME / ".claude"],
         "append_mode": False,
+        "inline_adapter": (
+            "---\n"
+            "name: ai-review-setup\n"
+            "description: \"配置 AI Code Review 工具到当前项目。安装 ai-review、配置 LLM 后端、"
+            "生成审查规则、安装 git hooks。当用户说\\\"配置代码审查\\\"、\\\"安装 ai-review\\\"、"
+            "\\\"设置 review\\\" 时触发。\"\n"
+            "---\n"
+        ),
     },
     "cursor": {
         "name": "Cursor",
@@ -93,6 +92,14 @@ AGENTS = {
         ],
         "detect": [HOME / ".cursor"],
         "append_mode": False,
+        "inline_adapter": (
+            "---\n"
+            "description: 配置 AI Code Review - 安装 ai-review、配置 LLM 后端、生成审查规则、安装 git hooks\n"
+            "alwaysApply: false\n"
+            "globs:\n"
+            "  - \"**/*\"\n"
+            "---\n"
+        ),
     },
     "copilot": {
         "name": "GitHub Copilot",
@@ -103,6 +110,7 @@ AGENTS = {
         "detect": [CWD / ".github"],
         "append_mode": True,
         "append_header": "\n\n## AI Code Review Setup\n\n",
+        "inline_adapter": "",
     },
     "windsurf": {
         "name": "Windsurf",
@@ -114,6 +122,11 @@ AGENTS = {
         ],
         "detect": [HOME / ".codeium"],
         "append_mode": False,
+        "inline_adapter": (
+            "---\n"
+            "trigger: always_on\n"
+            "---\n"
+        ),
     },
     "cline": {
         "name": "Cline",
@@ -125,6 +138,7 @@ AGENTS = {
         ],
         "detect": [HOME / "Documents" / "Cline"],
         "append_mode": False,
+        "inline_adapter": "",
     },
     "opencode": {
         "name": "OpenCode",
@@ -137,6 +151,7 @@ AGENTS = {
         ],
         "detect": [HOME / ".config" / "opencode", HOME / ".opencode"],
         "append_mode": False,
+        "inline_adapter": "",
     },
     "aider": {
         "name": "Aider",
@@ -147,6 +162,7 @@ AGENTS = {
         "detect": [HOME / ".aider.conf.yml"],
         "append_mode": True,
         "append_header": "\n\n## AI Code Review Setup\n\n",
+        "inline_adapter": "",
     },
 }
 
@@ -215,10 +231,9 @@ def interactive_install():
     print("╚══════════════════════════════════════════╝")
     print()
 
-    # 检测
     detected = detect_agents()
     if detected:
-        print(f"检测到以下 AI Agent 环境:")
+        print("检测到以下 AI Agent 环境:")
         for aid in detected:
             print(f"  ✓ {AGENTS[aid]['name']}")
     else:
@@ -230,7 +245,7 @@ def interactive_install():
     for i, aid in enumerate(agent_ids, 1):
         marker = " ✓" if aid in detected else "  "
         print(f"  [{i}] {AGENTS[aid]['name']}{marker}")
-    print(f"  [a] 全部安装")
+    print("  [a] 全部安装")
     print()
 
     choice = input("请选择 (如 1,2,3 或 a): ").strip().lower()
@@ -253,7 +268,6 @@ def interactive_install():
         print("未选择任何 agent，退出。")
         return
 
-    # 安装级别
     print("安装级别:")
     print("  [1] 项目级（当前项目目录，推荐）")
     print("  [2] 系统级（全局目录，所有项目可用）")

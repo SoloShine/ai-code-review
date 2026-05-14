@@ -8,7 +8,13 @@
       "Bash(powershell -Command \"[Environment]::GetEnvironmentVariable\\('ZHIPU_API_KEY', 'User'\\)\")",
       "Bash(export ZHIPU_API_KEY=$\\(powershell -Command \"[Environment]::GetEnvironmentVariable\\('ZHIPU_API_KEY', 'User'\\)\"\\))",
       "Bash(ai-review check *)",
-      "Bash(python -c ' *)"
+      "Bash(python -c ' *)",
+      "Bash(python skills/install_skill.py --list)",
+      "Bash(python skills/install_skill.py --agent claude-code --level project)",
+      "Bash(python skills/install_skill.py --agent cursor --level project)",
+      "Bash(python skills/install_skill.py --agent copilot --level project)",
+      "Bash(rm -rf .cursor .github/copilot-instructions.md)",
+      "Bash(rm -rf .claude/skills/ai-review-setup)"
     ]
   }
 }
