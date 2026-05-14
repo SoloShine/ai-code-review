@@ -4,9 +4,10 @@ export default defineConfig({
   lang: 'zh-CN',
   title: 'AI Code Review',
   description: 'AI 驱动的代码审查工具',
+  base: '/ai-code-review/',
 
   head: [
-    ['link', { rel: 'icon', href: '/favicon.ico' }],
+    ['link', { rel: 'icon', href: '/ai-code-review/favicon.ico' }],
   ],
 
   themeConfig: {
