@@ -1,0 +1,6 @@
+---
+description: 配置 AI Code Review - 安装、初始化、生成规则
+alwaysApply: false
+globs:
+  - "**/*"
+---
