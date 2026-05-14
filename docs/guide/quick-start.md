@@ -11,7 +11,7 @@ title: "快速开始"
 通过 pip 安装 AI Code Review：
 
 ```bash
-pip install -e .
+pip install soloshine-ai-code-review
 ```
 
 安装完成后，验证是否成功：

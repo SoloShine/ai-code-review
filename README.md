@@ -50,12 +50,8 @@ AI Code Review 是一个本地运行的代码审查工具，通过接入 LLM（�
 ### 安装步骤
 
 ```bash
-# 克隆项目
-git clone <repo-url> ai-code-review
-cd ai-code-review
-
-# 安装（开发模式，方便后续更新）
-pip install -e .
+# 从 PyPI 安装
+pip install soloshine-ai-code-review
 
 # 验证安装
 ai-review --help
@@ -63,7 +59,7 @@ ai-review --help
 
 ### 依赖说明
 
-核心依赖（自动安装）：
+核心依赖（pip install 时自动安装）：
 
 | 包 | 用途 |
 |----|------|

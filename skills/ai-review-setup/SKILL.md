@@ -35,9 +35,9 @@
 
 ### Step 2: 安装 ai-review（如未安装）
 
-从 GitHub 安装：
+从 PyPI 安装：
 ```bash
-pip install git+https://github.com/SoloShine/ai-code-review.git
+pip install soloshine-ai-code-review
 ```
 
 验证安装：
