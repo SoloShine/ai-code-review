@@ -70,6 +70,24 @@ ai-review --help
 
 ---
 
+## 使用 AI Agent 一键配置（推荐）
+
+本项目提供了 Skill 安装器，可以让你的 AI coding agent 自动完成全套安装和配置，无需手动操作。
+
+支持的 Agent：Claude Code、Cursor、GitHub Copilot、Windsurf、Cline、OpenCode、Aider
+
+```bash
+# 克隆仓库后运行安装器
+git clone https://github.com/SoloShine/ai-code-review.git
+python ai-code-review/skills/install_skill.py
+```
+
+安装完成后，在你的 AI agent 中打开任意项目，说「帮我配置代码审查」即可自动完成 pip 安装、LLM 后端配置、审查规则生成、Git hooks 安装。
+
+详见 [skills/README.md](skills/README.md)。
+
+---
+
 ## 快速开始
 
 ### 1. 在项目中初始化
