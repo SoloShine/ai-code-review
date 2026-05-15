@@ -78,7 +78,7 @@ Full mode prompt uses smart budget allocation with rule-boundary truncation:
 
 ### Hook Installation
 
-`HookInstaller` in `hooks/installer.py` resolves the git directory via `_resolve_git_dir()` which handles three cases: normal repo (`.git/` is a dir), submodule/worktree (`.git` is a file with `gitdir:` pointer), and fallback via `git rev-parse --git-dir`. Hook scripts are generated with the full resolved path to `ai-review` (found via `_find_ai_review_cmd()` which checks pip Scripts dir, `shutil.which`, then falls back to `python -m ai_review.cli`).
+`HookInstaller` in `hooks/installer.py` resolves the git directory via `_resolve_git_dir()` which handles three cases: normal repo (`.git/` is a dir), submodule/worktree (`.git` is a file with `gitdir:` pointer), and fallback via `git rev-parse --git-dir`. It also detects `core.hookspath` via `_get_core_hookspath()` — if set (e.g. by husky, lefthook), hooks are installed to that directory instead of `.git/hooks/`. Hook scripts include a three-level path fallback chain: resolved install path → `command -v ai-review` → `python -m ai_review.cli`. Existing hooks are detected and ai-review content is appended rather than overwriting.
 
 ### LLM Provider Abstraction
 
@@ -104,8 +104,10 @@ Reports saved as JSON+MD pairs in `.ai-review/reports/`. `InboxManager` tracks r
 - **Early termination on LLM failure**: After first LLM connection failure, remaining batches are skipped (`llm_failed` flag in screener).
 - **JSON-first LLM output**: Both fast and full prompts request strict JSON format. Parser tries JSON extraction first (handles markdown code block wrapping), falls back to regex text parsing.
 - **Smart grouping over single request**: Large files reviewed individually for quality; small files merged for efficiency. Batch renames handled gracefully.
-- **Hook scripts resolve command path at install time**: `_find_ai_review_cmd()` writes the full path into hook scripts, avoiding PATH issues in minimal shell environments.
+- **Hook scripts resolve command path at install time**: `_find_ai_review_cmd()` writes the full path into hook scripts, avoiding PATH issues in minimal shell environments. Scripts include a runtime fallback chain (`command -v` → `python -m`) in case the install-time path becomes stale.
 - **Submodule-aware hook installation**: `_resolve_git_dir()` reads `gitdir:` files and falls back to `git rev-parse`, supporting submodules and worktrees.
+- **core.hookspath detection**: `_get_core_hookspath()` checks if the project uses a custom hook directory (husky, lefthook, etc.). If set, hooks install there instead of `.git/hooks/`.
+- **Hook merge, not overwrite**: When a pre-commit hook already exists, ai-review content is appended. If ai-review content already exists, it's replaced with updated version.
 - **Rule-boundary truncation**: Prompt builder truncates rules at `---` boundaries, sorted by severity. Never cuts mid-rule.
 - **Four-level severity**: Rules support critical/error/warning/info. The `error` severity filter implicitly matches `critical` (critical ≥ error).
 - **Hook scripts are inline**: `HookInstaller` embeds shell scripts as string constants, no external template files.

@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.2.3 (2025-05-15)
+
+### Bug Fixes
+
+- **BUG-9 (高优先级)**: `ai-review init` 未检测 `core.hookspath` 配置，导致 hook 静默不生效。当项目配置了 `core.hookspath`（如使用 husky、lefthook 等工具），ai-review 仍将 hook 安装到 `.git/hooks/`，但 Git 实际查找 `core.hookspath` 指定的目录
+  - 现在 `init` 自动检测 `core.hookspath`，将 hook 安装到正确的目录
+  - 安装路径信息明确输出给用户
+
+### Changes
+
+- **Hook 脚本动态路径查找**: hook 脚本不再仅依赖安装时的硬编码绝对路径，增加了回退查找链：
+  1. 安装时解析的路径
+  2. `command -v ai-review` 动态查找
+  3. `python -m ai_review.cli` 最终回退
+  - 解决 Python 重装、虚拟环境切换后 hook 失效的问题
+- **已有 hook 合并改进**: 检测到已有 hook 时自动追加而非覆盖；检测到已有 ai-review 段落时智能替换更新
+
+
 ## v0.2.2 (2025-05-15)
 
 ### Changes

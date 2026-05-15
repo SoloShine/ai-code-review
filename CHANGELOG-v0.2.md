@@ -1,4 +1,4 @@
-# AI Code Review v0.2.0 ~ v0.2.2 变动说明
+# AI Code Review v0.2.0 ~ v0.2.3 变动说明
 
 > 更新日期：2025-05-15
 > 安装命令：`pip install --upgrade soloshine-ai-code-review`
@@ -14,6 +14,7 @@
 | v0.2.0 | 功能 + 修复 | 智能文件分组、三明治截断、自动 .gitignore |
 | v0.2.1 | Bug 修复 | 修复验证报告中 6 个问题（见下文） |
 | v0.2.2 | 优化 | Prompt 智能预算分配、max_tokens 提升 |
+| v0.2.3 | Bug 修复 | core.hookspath 检测、hook 动态路径、已有 hook 合并 |
 
 ---
 
@@ -118,6 +119,43 @@ llm:
     max_tokens: 32000  # 按需调整
 ```
 
+### 11. core.hookspath 检测（v0.2.3）
+
+**问题**：`ai-review init` 将 hook 安装到 `.git/hooks/`，但如果项目配置了 `core.hookspath`（如使用 husky、lefthook），Git 只查找 `core.hookspath` 指定的目录，hook 永远不会执行。
+
+**修复**：
+- `init` 时检查 `git config core.hookspath`
+- 如果设置了 `core.hookspath`，将 hook 安装到该目录而非 `.git/hooks/`
+- 输出明确提示安装路径，让用户知道检测到了 `core.hookspath`
+
+### 12. Hook 脚本动态路径查找（v0.2.3）
+
+**之前**：hook 脚本中 `ai-review` 使用安装时的硬编码绝对路径
+
+**现在**：hook 脚本包含三级回退查找：
+1. 安装时解析的路径（如果文件仍存在）
+2. `command -v ai-review` 动态查找
+3. `python -m ai_review.cli` 最终回退
+
+```bash
+_ai_review_cmd="C:/Users/.../ai-review.exe"  # 安装时路径
+if [ ! -f "$_ai_review_cmd" ]; then
+    _ai_review_cmd=$(command -v ai-review 2>/dev/null)
+fi
+if [ -z "$_ai_review_cmd" ]; then
+    _ai_review_cmd="python -m ai_review.cli"
+fi
+```
+
+### 13. 已有 hook 合并改进（v0.2.3）
+
+**之前**：检测到已有 hook 时直接跳过或静默覆盖
+
+**现在**：
+- 已有 hook 不含 ai-review → 追加 ai-review 段落
+- 已有 hook 包含 ai-review → 智能替换为更新版本
+- 追加时输出提示：`ℹ️  Appended ai-review to existing pre-commit hook`
+
 ---
 
 ## 三、升级步骤
@@ -132,7 +170,7 @@ pip show soloshine-ai-code-review | grep Version
 # 3. 清理旧包（如果之前装过 ai-code-reviewer）
 pip uninstall ai-code-reviewer -y 2>/dev/null
 
-# 4. 重新初始化（会更新 hooks 脚本，写入完整路径）
+# 4. 重新初始化（会更新 hooks 脚本，支持 core.hookspath 检测）
 cd your-project
 ai-review init
 ```
@@ -164,6 +202,20 @@ ai-review init
 [ ] .git/hooks/pre-commit 内容包含 ai-review 完整路径（非 bare "ai-review"）
 [ ] git commit 能正常触发 pre-commit hook
 [ ] hook 不再报 "ai-review: command not found"
+```
+
+### core.hookspath 检测（v0.2.3 新增）
+
+```
+[ ] 设置 core.hookspath 后运行 ai-review init：
+    a. 能检测到 core.hookspath 配置
+    b. hook 安装到 core.hookspath 指定的目录
+    c. 输出提示：Detected core.hookspath=...
+    d. git commit 能触发 hook
+[ ] 已有 pre-commit hook 的项目中运行 ai-review init：
+    a. 检测到已有 hook 并提示
+    b. ai-review 段落追加到已有 hook 末尾
+    c. 两个 hook 功能均正常
 ```
 
 ### 规则引擎

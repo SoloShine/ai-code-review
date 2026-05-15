@@ -287,7 +287,10 @@ ai-review check --verbose
 
 3. 确认 Git Hooks 已安装：
 ```bash
-# 普通项目
+# 检查 core.hookspath 配置（如果有，hooks 安装到该目录）
+git config core.hookspath
+
+# 普通项目（无 core.hookspath）
 ls .git/hooks/pre-commit
 # submodule 项目（路径可能不同）
 git rev-parse --git-dir
@@ -321,3 +324,6 @@ git rev-parse --git-dir
 - **大文件自动处理**：超过 200 行的文件单独审查，小文件合并审查，批量重命名不会超时
 - **max_tokens 可调**：如果审查结果被截断，在配置中增大 `max_tokens`（默认 16000）
 - **severity 四级**：规则支持 critical / error / warning / info，critical 最严重
+- **core.hookspath 兼容**：`ai-review init` 自动检测 `core.hookspath` 配置（如 husky、lefthook 设置的），将 hook 安装到正确目录
+- **已有 hook 合并**：`init` 检测已有 pre-commit hook 时自动追加，不会覆盖其他工具的 hook
+- **动态路径查找**：hook 脚本中 `ai-review` 路径有多级回退，Python 重装或环境切换后仍可工作
