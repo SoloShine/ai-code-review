@@ -50,6 +50,11 @@ ai-review --help
 - pip 是否可用
 - 网络连接是否正常
 
+如果用户系统上有旧包 `ai-code-reviewer`，先卸载：
+```bash
+pip uninstall ai-code-reviewer -y
+```
+
 ### Step 3: 项目初始化
 
 运行初始化命令：
@@ -60,7 +65,13 @@ ai-review init
 该命令会自动：
 - 创建 `.ai-review.yaml` 配置文件
 - 创建 `.ai-review/rules/` 目录（含示例规则）
-- 安装 Git pre-commit 和 post-commit 钩子
+- 安装 Git pre-commit 和 post-commit 钩子（支持 submodule/worktree）
+- 更新 `.gitignore`：忽略 memory.json / suppressions.json / reports/，保留 rules/ 供版本控制
+
+确认 hooks 安装成功（submodule 项目中路径可能在 `.git/modules/` 下）：
+```bash
+ai-review init  # 如果显示路径包含 modules，说明正确识别了 submodule
+```
 
 ### Step 4: 配置 LLM 后端
 
@@ -87,9 +98,10 @@ llm:
     api_key_env: "ZHIPU_API_KEY"
     model: "glm-5-turbo"
     timeout: 60
+    max_tokens: 16000
 hooks:
   pre_commit:
-    timeout: 30
+    timeout: 60
     block_on: ["CRITICAL", "ERROR"]
   post_commit:
     enabled: true
@@ -117,6 +129,7 @@ llm:
     api_key_env: "DEEPSEEK_API_KEY"
     model: "deepseek-chat"
     timeout: 60
+    max_tokens: 16000
 ```
 
 **Ollama（本地）：**
@@ -172,7 +185,7 @@ source ~/.bashrc
 
 **生成规则：**
 
-在 `.ai-review/rules/` 下生成对应的 YAML 文件。
+在 `.ai-review/rules/` 下生成对应的 YAML 文件。severity 支持四级：`critical` / `error` / `warning` / `info`。
 
 **前端规则** (`frontend.yaml`)：
 ```yaml
@@ -210,6 +223,14 @@ rules:
     applies_to:
       extensions: [".ts", ".js", ".vue"]
     description: "禁止使用 setTimeout 处理时序性问题，应使用 Promise/nextTick 等可靠机制。"
+
+  - id: "no-hardcoded-secrets"
+    title: "禁止硬编码密钥"
+    severity: "critical"
+    enabled: true
+    applies_to:
+      extensions: [".ts", ".js", ".vue"]
+    description: "禁止在代码中硬编码 API Key、密码等敏感信息，应使用环境变量。"
 ```
 
 **Python 规则** (`python.yaml`)：
@@ -219,7 +240,7 @@ description: "Python code review rules"
 rules:
   - id: "no-eval"
     title: "禁止使用 eval"
-    severity: "error"
+    severity: "critical"
     enabled: true
     applies_to:
       extensions: [".py"]
@@ -227,7 +248,7 @@ rules:
 
   - id: "sql-injection"
     title: "防止 SQL 注入"
-    severity: "error"
+    severity: "critical"
     enabled: true
     applies_to:
       extensions: [".py"]
@@ -266,8 +287,11 @@ ai-review check --verbose
 
 3. 确认 Git Hooks 已安装：
 ```bash
+# 普通项目
 ls .git/hooks/pre-commit
-ls .git/hooks/post-commit
+# submodule 项目（路径可能不同）
+git rev-parse --git-dir
+# 查看该目录下的 hooks/
 ```
 
 4. 向用户报告安装结果：
@@ -280,6 +304,7 @@ ls .git/hooks/post-commit
   • Git post-commit hook (异步全量审查)
   • 审查规则: X 条 (前端/后端)
   • LLM 后端: [用户选择的后端]
+  • .gitignore 已更新 (生成文件忽略，rules/ 保留版本控制)
 
 下一步：
   1. 正常提交代码即可触发审查
@@ -292,5 +317,7 @@ ls .git/hooks/post-commit
 
 - **LLM 故障不阻塞提交**：ai-review 在 LLM 不可用时自动放行，不会影响正常工作流
 - **首次提交**可能较慢（LLM 冷启动），后续会更快
-- **规则可以随时修改**：编辑 `.ai-review/rules/` 下的 YAML 文件
-- **不要把 `.ai-review/` 提交到 Git**：建议加入 `.gitignore`
+- **规则可以随时修改**：编辑 `.ai-review/rules/` 下的 YAML 文件，rules/ 目录会被版本控制
+- **大文件自动处理**：超过 200 行的文件单独审查，小文件合并审查，批量重命名不会超时
+- **max_tokens 可调**：如果审查结果被截断，在配置中增大 `max_tokens`（默认 16000）
+- **severity 四级**：规则支持 critical / error / warning / info，critical 最严重
