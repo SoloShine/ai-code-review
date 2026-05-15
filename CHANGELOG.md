@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.2.2 (2025-05-15)
+
+### Changes
+
+- **Prompt 智能预算分配**: full 模式 prompt 不再硬截断规则文本，改为按规则边界截断
+  - 规则按 severity 排序（critical > error > warning > info），优先保留高优先级规则
+  - 每条规则保持完整，不会从中间截断
+  - 预算分配：context 4000 字符 / rules 6000 字符 / warnings 1500 字符 / diff 15000 字符
+- **max_tokens 默认值提升**: 8000 → 16000，给 reasoning 模型更多输出空间
+
+
 ## v0.2.1 (2025-05-15)
 
 ### Bug Fixes

@@ -28,7 +28,7 @@ class OpenAICompatibleConfig:
     api_key_env: str = "OPENAI_API_KEY"
     model: str = "gpt-4"
     timeout: int = 30
-    max_tokens: int = 8000
+    max_tokens: int = 16000
 
 
 @dataclass

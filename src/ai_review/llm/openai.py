@@ -7,7 +7,7 @@ from .base import LLMProvider, LLMResponse
 class OpenAICompatibleProvider(LLMProvider):
     def __init__(self, model: str = "gpt-3.5-turbo", api_key_env: str = "OPENAI_API_KEY",
                  base_url: str = "https://api.openai.com/v1", timeout: int = 60,
-                 max_tokens: int = 8000):
+                 max_tokens: int = 16000):
         self.model = model
         self.api_key_env = api_key_env
         self.base_url = base_url.rstrip("/")

@@ -5,6 +5,12 @@ from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
+# Prompt section budgets (chars)
+CONTEXT_BUDGET = 4000
+RULES_BUDGET = 6000
+WARNINGS_BUDGET = 1500
+DIFF_HARD_LIMIT = 15000
+
 
 @dataclass
 class PromptContext:
@@ -20,20 +26,6 @@ class PromptBuilder:
     """Assembles the final prompt from components."""
 
     def build(self, ctx: PromptContext) -> str:
-        """Build the complete prompt string.
-
-        For "fast" mode (pre-commit):
-          - No context section
-          - Only error severity rules
-          - Focus on: CRITICAL/ERROR issues only
-          - Ask for brief output
-
-        For "full" mode (async review):
-          - Full context section
-          - All severity rules
-          - Include pending warnings context for memory feedback
-          - Ask for detailed output with rule IDs
-        """
         if ctx.mode == "fast":
             return self._build_fast_mode_prompt(ctx)
         elif ctx.mode == "full":
@@ -89,31 +81,34 @@ class PromptBuilder:
 """
 
     def _build_full_mode_prompt(self, ctx: PromptContext) -> str:
-        """Build full mode prompt for detailed review."""
+        """Build full mode prompt with smart budget allocation."""
         sections = []
 
-        # Context: limit to 3000 chars
+        # Context: truncate at line boundaries
         if ctx.context_text:
-            context = ctx.context_text
-            if len(context) > 3000:
-                context = context[:3000] + "\n... (项目结构已截断)"
+            context = _truncate_at_lines(ctx.context_text, CONTEXT_BUDGET)
             sections.append("## 项目结构")
             sections.append(context)
 
-        # Rules: limit to 3000 chars
+        # Rules: truncate at rule boundaries (split by '---')
         if ctx.rules_prompt.strip():
-            rules = ctx.rules_prompt
-            if len(rules) > 3000:
-                rules = rules[:3000] + "\n... (审查规范已截断，请关注前述规则)"
+            rules = _truncate_rules(ctx.rules_prompt, RULES_BUDGET)
             sections.append("## 审查规范")
             sections.append(rules)
 
+        # Warnings: simple truncation
         if ctx.pending_warnings_text:
+            warnings = _truncate_at_lines(ctx.pending_warnings_text, WARNINGS_BUDGET)
             sections.append("## 历史审查警告")
-            sections.append(ctx.pending_warnings_text)
+            sections.append(warnings)
+
+        # Diff: hard limit as safety net (should already be truncated by caller)
+        diff = ctx.diff
+        if len(diff) > DIFF_HARD_LIMIT:
+            diff = diff[:DIFF_HARD_LIMIT] + "\n... (代码变更已截断)"
 
         sections.append("## 代码变更")
-        sections.append(ctx.diff)
+        sections.append(diff)
 
         content = "\n".join(sections)
 
@@ -152,3 +147,69 @@ class PromptBuilder:
   - suggestion：用一句话解释为什么要这样改
 - 如果没有任何问题，issues 为空数组，highlights 至少列一条
 """
+
+
+def _truncate_at_lines(text: str, budget: int) -> str:
+    """Truncate text at line boundaries to fit within budget."""
+    if len(text) <= budget:
+        return text
+
+    lines = text.splitlines()
+    result = []
+    total = 0
+    for line in lines:
+        if total + len(line) + 1 > budget - 50:
+            break
+        result.append(line)
+        total += len(line) + 1
+
+    result.append(f"... (已截断，保留前 {len(result)}/{len(lines)} 行)")
+    return "\n".join(result)
+
+
+def _truncate_rules(rules_text: str, budget: int) -> str:
+    """Truncate rules at rule boundaries (split by '---').
+
+    Keeps complete rules, never cuts mid-rule.
+    Prioritizes rules by severity: critical > error > warning > info.
+    """
+    if len(rules_text) <= budget:
+        return rules_text
+
+    # Split into individual rule blocks
+    rule_blocks = rules_text.split("\n---\n")
+    if not rule_blocks:
+        return rules_text[:budget]
+
+    # Sort by severity (critical first, then error, then warning, then info)
+    def severity_rank(block: str) -> int:
+        lower = block.lower()
+        if "[critical]" in lower:
+            return 0
+        if "[error]" in lower:
+            return 1
+        if "[warning]" in lower:
+            return 2
+        return 3
+
+    rule_blocks.sort(key=severity_rank)
+
+    # Add rules until budget is exhausted
+    kept = []
+    total = 0
+    for block in rule_blocks:
+        needed = len(block) + 5  # 5 for "\n---\n"
+        if total + needed > budget:
+            break
+        kept.append(block)
+        total += needed
+
+    if not kept:
+        # Even one rule exceeds budget — keep first rule truncated
+        return rule_blocks[0][:budget]
+
+    dropped = len(rule_blocks) - len(kept)
+    result = "\n---\n".join(kept)
+    if dropped > 0:
+        result += f"\n\n... (已省略 {dropped} 条优先级较低的规则)"
+    return result
