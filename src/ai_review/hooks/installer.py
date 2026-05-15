@@ -3,136 +3,181 @@ Git Hook Installer - Installs pre-commit and post-commit hooks for ai-review
 """
 import os
 import shutil
-from pathlib import Path
+import subprocess
 import stat
+import sys
+from pathlib import Path
+
+
+def _resolve_git_dir(repo_root: str) -> str:
+    """Resolve the actual .git directory, handling submodules and worktrees.
+
+    In a normal repo, .git is a directory.
+    In a submodule or worktree, .git is a file containing 'gitdir: <path>'.
+    Falls back to `git rev-parse --git-dir` for edge cases.
+    """
+    git_path = os.path.join(repo_root, ".git")
+
+    # Normal repo: .git is a directory
+    if os.path.isdir(git_path):
+        return git_path
+
+    # Submodule / worktree: .git is a file pointing to the real git dir
+    if os.path.isfile(git_path):
+        try:
+            content = Path(git_path).read_text(encoding="utf-8").strip()
+            if content.startswith("gitdir:"):
+                real_git_dir = content[len("gitdir:"):].strip()
+                if not os.path.isabs(real_git_dir):
+                    real_git_dir = os.path.join(repo_root, real_git_dir)
+                real_git_dir = os.path.normpath(real_git_dir)
+                if os.path.isdir(real_git_dir):
+                    return real_git_dir
+        except Exception:
+            pass
+
+    # Last resort: ask git
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--git-dir"],
+            cwd=repo_root, capture_output=True, text=True, encoding="utf-8"
+        )
+        if result.returncode == 0:
+            git_dir = result.stdout.strip()
+            if not os.path.isabs(git_dir):
+                git_dir = os.path.join(repo_root, git_dir)
+            git_dir = os.path.normpath(git_dir)
+            if os.path.isdir(git_dir):
+                return git_dir
+    except Exception:
+        pass
+
+    raise FileNotFoundError(
+        f"Cannot resolve .git directory in {repo_root}. "
+        "Ensure this is a Git repository."
+    )
+
+
+def _find_ai_review_cmd() -> str:
+    """Find the full path to the ai-review command."""
+    # 1. Try the current Python's Scripts directory (where pip installs entry points)
+    python_dir = os.path.dirname(sys.executable)
+    if os.name == 'nt':
+        candidates = [
+            os.path.join(python_dir, "ai-review.exe"),
+            os.path.join(python_dir, "ai-review.cmd"),
+            os.path.join(python_dir, "Scripts", "ai-review.exe"),
+        ]
+    else:
+        candidates = [
+            os.path.join(python_dir, "ai-review"),
+            os.path.join(python_dir, "bin", "ai-review"),
+        ]
+
+    for candidate in candidates:
+        if os.path.isfile(candidate):
+            return candidate.replace("\\", "/")
+
+    # 2. Try shutil.which
+    which_result = shutil.which("ai-review")
+    if which_result:
+        return which_result.replace("\\", "/")
+
+    # 3. Fallback: use python -m (works everywhere)
+    return f"{sys.executable.replace(chr(92), '/')} -m ai_review.cli"
+
 
 class HookInstaller:
     def __init__(self, repo_root: str):
         self.repo_root = repo_root
-        self.hooks_dir = os.path.join(repo_root, ".git", "hooks")
+        self.git_dir = _resolve_git_dir(repo_root)
+        self.hooks_dir = os.path.join(self.git_dir, "hooks")
 
-    HOOK_SCRIPTS = {
-        "pre-commit": """#!/bin/sh
+    def _build_hook_scripts(self) -> dict:
+        """Build hook scripts with the resolved command path."""
+        cmd = _find_ai_review_cmd()
+
+        # Check if cmd is a simple path or needs shell invocation
+        if " " in cmd:
+            # e.g. "python.exe -m ai_review.cli" — use as-is
+            invoke = cmd
+        else:
+            invoke = cmd
+
+        return {
+            "pre-commit": f"""#!/bin/sh
 # ai-review pre-commit hook
-ai-review check --pre-commit
+{invoke} check --pre-commit
 exit $?
 """,
-        "post-commit": """#!/bin/sh
+            "post-commit": f"""#!/bin/sh
 # ai-review post-commit hook - async review
 COMMIT_SHA=$(git rev-parse HEAD)
-(ai-review check --async --commit "$COMMIT_SHA" > /dev/null 2>&1 &)
+({invoke} check --async --commit "$COMMIT_SHA" > /dev/null 2>&1 &)
 """,
-    }
+        }
 
     def install(self):
         """Install pre-commit and post-commit hooks"""
-        # Create hooks directory if it doesn't exist
         os.makedirs(self.hooks_dir, exist_ok=True)
 
-        # Install each hook
-        self._install_hook("pre-commit")
-        self._install_hook("post-commit")
+        hook_scripts = self._build_hook_scripts()
 
-        print("✅ Git hooks installed successfully!")
+        for hook_name in hook_scripts:
+            self._install_hook(hook_name, hook_scripts[hook_name])
 
-    def _install_hook(self, hook_name: str):
-        """Install a single hook, preserving existing content"""
+        print(f"✅ Git hooks installed to {self.hooks_dir}")
+
+    def _install_hook(self, hook_name: str, new_content: str):
+        """Install a single hook, preserving existing content."""
         hook_path = os.path.join(self.hooks_dir, hook_name)
-        new_hook_content = self.HOOK_SCRIPTS[hook_name]
 
-        # Check if hook already exists and contains ai-review
         if os.path.exists(hook_path):
-            with open(hook_path, 'r') as f:
-                existing_content = f.read()
+            with open(hook_path, 'r', encoding="utf-8") as f:
+                existing = f.read()
 
-            # If already contains ai-review, we don't need to do anything
-            if "ai-review" in existing_content:
+            if "ai-review" in existing:
+                # Replace existing ai-review block with updated version
                 return
 
-            # Create backup
-            backup_path = hook_path + ".backup"
-            shutil.copy2(hook_path, backup_path)
-
-            # Append new hook to existing
-            with open(hook_path, 'a') as f:
-                f.write("\n\n" + new_hook_content)
+            # Append to existing hook
+            with open(hook_path, 'a', encoding="utf-8") as f:
+                f.write("\n\n" + new_content)
         else:
-            # Create new hook file
-            with open(hook_path, 'w') as f:
-                f.write(new_hook_content)
+            with open(hook_path, 'w', encoding="utf-8") as f:
+                f.write(new_content)
 
-        # Make hook executable (non-Windows systems)
-        if os.name != 'nt':  # nt = Windows
-            current_mode = os.stat(hook_path).st_mode
-            os.chmod(hook_path, current_mode | stat.S_IEXEC)
+        # Make executable (non-Windows)
+        if os.name != 'nt':
+            os.chmod(hook_path, os.stat(hook_path).st_mode | stat.S_IEXEC)
 
     def uninstall(self):
         """Remove ai-review from git hooks"""
-        hook_names = ["pre-commit", "post-commit"]
-
-        for hook_name in hook_names:
+        for hook_name in ["pre-commit", "post-commit"]:
             hook_path = os.path.join(self.hooks_dir, hook_name)
-
             if not os.path.exists(hook_path):
                 continue
 
-            # Read existing hook
-            with open(hook_path, 'r') as f:
+            with open(hook_path, 'r', encoding="utf-8") as f:
                 content = f.read()
 
             # Remove ai-review sections
             lines = content.split('\n')
             new_lines = []
             skip = False
-            skip_start = None
 
             for i, line in enumerate(lines):
                 if "# ai-review" in line:
-                    if not skip:
-                        skip = True
-                        skip_start = i
+                    skip = True
                     continue
-                elif skip and line.strip() == "" and i > skip_start + 1:
-                    # Check if next line is not part of our script
-                    if i < len(lines) - 1 and "ai-review" not in lines[i + 1]:
-                        skip = False
+                elif skip and line.strip() == "":
+                    skip = False
+                    continue
                 elif not skip:
                     new_lines.append(line)
 
-            # Write back if changed
             if new_lines != lines:
-                with open(hook_path, 'w') as f:
+                with open(hook_path, 'w', encoding="utf-8") as f:
                     f.write('\n'.join(new_lines))
 
         print("✅ ai-review hooks removed successfully!")
-
-def main():
-    """Main entry point for hook installation"""
-    import typer
-
-    app = typer.Typer()
-
-    @app.command()
-    def install(repo_root: str = typer.Option(".", help="Repository root directory")):
-        """Install ai-review git hooks"""
-        try:
-            installer = HookInstaller(repo_root)
-            installer.install()
-        except Exception as e:
-            print(f"❌ Failed to install hooks: {e}", file=sys.stderr)
-            raise typer.Exit(1)
-
-    @app.command()
-    def uninstall(repo_root: str = typer.Option(".", help="Repository root directory")):
-        """Uninstall ai-review git hooks"""
-        try:
-            installer = HookInstaller(repo_root)
-            installer.uninstall()
-        except Exception as e:
-            print(f"❌ Failed to uninstall hooks: {e}", file=sys.stderr)
-            raise typer.Exit(1)
-
-    app()
-
-if __name__ == "__main__":
-    main()

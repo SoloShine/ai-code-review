@@ -6,11 +6,13 @@ from .base import LLMProvider, LLMResponse
 
 class OpenAICompatibleProvider(LLMProvider):
     def __init__(self, model: str = "gpt-3.5-turbo", api_key_env: str = "OPENAI_API_KEY",
-                 base_url: str = "https://api.openai.com/v1", timeout: int = 60):
+                 base_url: str = "https://api.openai.com/v1", timeout: int = 60,
+                 max_tokens: int = 8000):
         self.model = model
         self.api_key_env = api_key_env
         self.base_url = base_url.rstrip("/")
         self.timeout_seconds = timeout
+        self.max_tokens = max_tokens
 
     def _get_chat_url(self) -> str:
         """Build the chat completions URL from base_url."""
@@ -50,7 +52,7 @@ class OpenAICompatibleProvider(LLMProvider):
                                 "content": prompt
                             }
                         ],
-                        "max_tokens": 4000,
+                        "max_tokens": self.max_tokens,
                         "temperature": 0.7
                     }
                 )

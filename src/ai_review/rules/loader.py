@@ -62,7 +62,7 @@ class Rule:
     """A single code review rule."""
     id: str
     title: str
-    severity: str  # "error", "warning", "info"
+    severity: str  # "critical", "error", "warning", "info"
     enabled: bool
     applies_to: AppliesTo
     description: str
@@ -71,8 +71,8 @@ class Rule:
 
     def __post_init__(self):
         """Validate the rule after initialization."""
-        if self.severity not in ["error", "warning", "info"]:
-            raise ValueError(f"Invalid severity: {self.severity}. Must be 'error', 'warning', or 'info'")
+        if self.severity not in ["critical", "error", "warning", "info"]:
+            raise ValueError(f"Invalid severity: {self.severity}. Must be 'critical', 'error', 'warning', or 'info'")
 
 
 class RuleEngine:
@@ -214,8 +214,12 @@ class RuleEngine:
                 continue
 
             # Skip rules that don't match severity filter
-            if severity_filter and rule.severity not in severity_filter:
-                continue
+            if severity_filter:
+                rule_sev = rule.severity.lower()
+                if rule_sev not in severity_filter:
+                    # "error" filter also matches "critical" (critical >= error)
+                    if not (rule_sev == "critical" and "error" in severity_filter):
+                        continue
 
             # Check if rule matches any changed file
             for file_path in changed_files:
@@ -225,7 +229,7 @@ class RuleEngine:
 
         # Sort rules: errors first, then warnings, then info; then by title
         def sort_key(rule):
-            severity_order = {"error": 0, "warning": 1, "info": 2}
+            severity_order = {"critical": 0, "error": 1, "warning": 2, "info": 3}
             return (severity_order.get(rule.severity, 999), rule.title.lower())
 
         return sorted(matching_rules, key=sort_key)

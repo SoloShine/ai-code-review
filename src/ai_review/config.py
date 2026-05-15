@@ -28,6 +28,7 @@ class OpenAICompatibleConfig:
     api_key_env: str = "OPENAI_API_KEY"
     model: str = "gpt-4"
     timeout: int = 30
+    max_tokens: int = 8000
 
 
 @dataclass
@@ -274,7 +275,8 @@ def _dict_to_app_config(config_dict: Dict[str, Any]) -> AppConfig:
                 base_url=openai_dict.get("base_url", "http://localhost:8000/v1"),
                 api_key_env=openai_dict.get("api_key_env", "OPENAI_API_KEY"),
                 model=openai_dict.get("model", "gpt-4"),
-                timeout=openai_dict.get("timeout", 30)
+                timeout=openai_dict.get("timeout", 30),
+                max_tokens=openai_dict.get("max_tokens", 8000)
             )
 
     # Hooks config

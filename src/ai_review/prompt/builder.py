@@ -92,13 +92,21 @@ class PromptBuilder:
         """Build full mode prompt for detailed review."""
         sections = []
 
+        # Context: limit to 3000 chars
         if ctx.context_text:
+            context = ctx.context_text
+            if len(context) > 3000:
+                context = context[:3000] + "\n... (项目结构已截断)"
             sections.append("## 项目结构")
-            sections.append(ctx.context_text)
+            sections.append(context)
 
+        # Rules: limit to 3000 chars
         if ctx.rules_prompt.strip():
+            rules = ctx.rules_prompt
+            if len(rules) > 3000:
+                rules = rules[:3000] + "\n... (审查规范已截断，请关注前述规则)"
             sections.append("## 审查规范")
-            sections.append(ctx.rules_prompt)
+            sections.append(rules)
 
         if ctx.pending_warnings_text:
             sections.append("## 历史审查警告")

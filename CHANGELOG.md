@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.2.1 (2025-05-15)
+
+### Bug Fixes
+
+- **BUG-1 (崩溃)**: `parser.py` 文本解析分支缺少 `highlights=[]`，LLM 返回非 JSON 时 `TypeError` 崩溃
+- **BUG-2**: Git Submodule / Worktree 下 `.git` 是文件不是目录，hooks 安装失败。改用 `gitdir:` 文件解析 + `git rev-parse --git-dir` 回退
+- **BUG-3+4**: Hook 脚本在最小化 shell 环境中找不到 `ai-review` 命令。`init` 时写入 `ai-review` 完整路径（解析 pip 安装位置）
+- **BUG-5**: 规则引擎不接受 `severity: "critical"`。统一支持 critical / error / warning / info 四级，且 `error` filter 自动匹配 `critical`
+
+### Changes
+
+- **ISSUE-6**: Full 模式 prompt 过大导致 reasoning 模型超时。context_text 和 rules_prompt 各截断至 3000 字符
+- **ISSUE-7**: `max_tokens` 硬编码 4000 改为可配置（默认 8000），通过 `.ai-review.yaml` 的 `llm.openai_compatible.max_tokens` 设置
+
+
 ## v0.2.0 (2025-05-15)
 
 ### New Features

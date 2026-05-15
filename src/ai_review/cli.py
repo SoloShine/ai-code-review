@@ -256,7 +256,8 @@ def _create_llm_provider(config):
             model=config.llm.openai_compatible.model,
             api_key_env=config.llm.openai_compatible.api_key_env,
             base_url=config.llm.openai_compatible.base_url,
-            timeout=config.llm.openai_compatible.timeout
+            timeout=config.llm.openai_compatible.timeout,
+            max_tokens=config.llm.openai_compatible.max_tokens
         )
     else:
         raise ValueError(f"Unsupported backend: {config.llm.backend}")

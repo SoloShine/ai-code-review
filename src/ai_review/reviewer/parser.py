@@ -43,7 +43,7 @@ class ReviewParser:
     def parse(self, llm_output: str) -> ReviewResult:
         """Parse LLM output into structured ReviewResult."""
         if not llm_output or not llm_output.strip():
-            return ReviewResult(status="PASS", issues=[], summary="", raw_output="")
+            return ReviewResult(status="PASS", issues=[], summary="", highlights=[], raw_output="")
 
         # Try JSON parsing first
         result = self._try_json_parse(llm_output)
@@ -61,6 +61,7 @@ class ReviewParser:
             status=status,
             issues=issues,
             summary=summary,
+            highlights=[],
             raw_output=llm_output
         )
 

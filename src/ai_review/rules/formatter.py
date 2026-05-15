@@ -126,6 +126,7 @@ def format_rules_for_cli(rules: List[Rule]) -> str:
     for rule in rules:
         # Severity and title
         severity_icon = {
+            "critical": "🛑",
             "error": "❌",
             "warning": "⚠️",
             "info": "ℹ️"
