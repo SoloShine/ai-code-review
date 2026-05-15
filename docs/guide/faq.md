@@ -53,7 +53,7 @@ chmod +x .git/hooks/pre-commit .git/hooks/post-commit
 # ai-review.yml
 hooks:
   pre_commit:
-    timeout: 60                 # 默认 30 秒，增加到 60 秒
+    timeout: 90                 # 默认 60 秒，可适当增加
 llm:
   timeout: 60                   # LLM 请求超时
 ```
@@ -173,12 +173,20 @@ New-BurntToastNotification -Text "测试", "通知功能正常"
   logs/                           # 运行日志
 ```
 
-**建议将 `.ai-review/` 添加到 `.gitignore`**：
+**`.ai-review/` 下的部分文件需要版本控制**：
 
-```bash
-echo ".ai-review/" >> .gitignore
+`ai-review init` 会自动更新 `.gitignore`，策略如下：
+
+- **忽略**：`memory.json`、`suppressions.json`、`reports/`（个人本地数据）
+- **保留**：`rules/` 目录（团队共享的审查规则）
+
+```gitignore
+# AI Code Review - generated files (rules/ are versioned)
+.ai-review/memory.json
+.ai-review/suppressions.json
+.ai-review/reports/
 ```
 
 ::: info
-`ai-review init` 命令会自动将 `.ai-review/` 添加到 `.gitignore`（如果尚未添加）。
+`ai-review init` 命令会自动添加以上条目到 `.gitignore`（幂等，不会重复添加）。
 :::

@@ -38,7 +38,7 @@ llm:
   backend: ollama
   model: qwen2.5-coder:7b
   base_url: http://localhost:11434    # Ollama 默认地址
-  timeout: 30                         # 超时时间（秒）
+  timeout: 60                         # 超时时间（秒）
 ```
 
 ### 推荐模型
@@ -65,7 +65,7 @@ llm:
   model: glm-4-flash                  # 根据服务商选择模型
   base_url: https://open.bigmodel.cn/api/coding/paas/v4
   api_key: ${OPENAI_API_KEY}          # 建议使用环境变量
-  timeout: 30
+  timeout: 60
 ```
 
 ### 支持的服务商

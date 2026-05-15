@@ -35,16 +35,17 @@ Pre-commit hook 在 `git commit` 执行前触发，负责快速扫描暂存区�
 
 **关键特性：**
 
-- **超时时间**：30 秒，超时自动放行
+- **超时时间**：60 秒（balanced 模式），超时自动放行
 - **阻断规则**：仅在发现 `CRITICAL` 或 `ERROR` 级别问题时阻止提交
-- **容错机制**：LLM 服务不可用时自动放行（auto-pass），不会因审查工具故障而阻塞开发
+- **智能分组**：大文件（>200 行）单独审查，小文件合并为单次 LLM 请求（最多 15 文件 / 500 行）
+- **容错机制**：LLM 服务不可用时自动放行（auto-pass），首次失败后跳过剩余批次，不会逐个超时
 
 ```yaml
 # ai-review.yml
 hooks:
   pre_commit:
     enabled: true
-    timeout: 30                 # 超时时间（秒）
+    timeout: 60                 # 超时时间（秒）
     block_on:                   # 阻断级别
       - CRITICAL
       - ERROR

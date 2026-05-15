@@ -17,11 +17,13 @@ if sys.platform == "win32":
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 from ai_review.memory.store import ReviewMemory
-from ai_review.llm.base import LLMProvider
+from ai_review.llm.base import LLMProvider, LLMResponse
 from ai_review.rules.loader import RuleEngine
 from ai_review.reviewer.screener import FastScreener
+from ai_review.reviewer.parser import ReviewParser
 from ai_review.hooks.installer import HookInstaller
 from ai_review.config import resolve_config
+from ai_review.diff_utils import truncate_diff, split_diff_by_file, FileDiff, group_files_for_review, truncate_single_file_diff
 
 logger = logging.getLogger("ai_review")
 
@@ -107,6 +109,33 @@ def create_ai_review_dir() -> None:
     with open(rules_dir / "example_rule.yaml", "w", encoding="utf-8") as f:
         yaml.dump(example_rule, f, allow_unicode=True)
 
+def _update_gitignore() -> None:
+    """Add .ai-review generated files to .gitignore, keeping rules/ versioned."""
+    gitignore_path = Path(".gitignore")
+    entries_to_add = [
+        "# AI Code Review - generated files (rules/ are versioned)",
+        ".ai-review/memory.json",
+        ".ai-review/suppressions.json",
+        ".ai-review/reports/",
+    ]
+
+    existing = ""
+    if gitignore_path.exists():
+        existing = gitignore_path.read_text(encoding="utf-8")
+
+    lines_to_add = []
+    for entry in entries_to_add:
+        if entry not in existing:
+            lines_to_add.append(entry)
+
+    if not lines_to_add:
+        return
+
+    typer.echo("📝 Updating .gitignore...")
+    block = "\n" + "\n".join(lines_to_add) + "\n"
+    with open(gitignore_path, "a", encoding="utf-8") as f:
+        f.write(block)
+
 def generate_config(
     mode: str = "balanced",
     backend: str = "ollama",
@@ -181,6 +210,9 @@ def init(
     # Create directory structure
     typer.echo("📁 Creating .ai-review directory...")
     create_ai_review_dir()
+
+    # Update .gitignore — keep rules/ versioned, ignore generated files
+    _update_gitignore()
 
     # Install hooks
     typer.echo("🪝 Installing git hooks...")
@@ -496,7 +528,7 @@ def check(
         llm_provider = _create_llm_provider(config)
 
         if pre_commit:
-            # Fast screen mode for pre-commit
+            # Fast screen mode for pre-commit — per-file review
             typer.echo("🔍 Running fast pre-commit screen...")
 
             # Get staged files
@@ -506,25 +538,30 @@ def check(
                 typer.echo("✅ No staged files to review")
                 raise typer.Exit(0)
 
-            # Get diff and files
+            # File count threshold: too many files -> auto-pass
+            PRE_COMMIT_MAX_FILES = 30
+            if len(staged_files) > PRE_COMMIT_MAX_FILES:
+                typer.echo(
+                    f"⚡ Large changeset ({len(staged_files)} files > {PRE_COMMIT_MAX_FILES} threshold), "
+                    "skipping pre-commit screen. Full review will run post-commit."
+                )
+                raise typer.Exit(0)
+
+            # Get diff
             diff = get_git_diff(cached=True)
             if not diff and not path:
                 typer.echo("✅ No staged changes to review")
                 raise typer.Exit(0)
 
-            logger.debug("Diff content:\n%s", diff[:2000])
-
-            # Create fast screener
+            # Create fast screener — handles per-file splitting internally
             from ai_review.reviewer.screener import FastScreener
             from ai_review.prompt.builder import PromptBuilder
-            from ai_review.reviewer.parser import ReviewParser
 
             fast_screener = FastScreener(llm_provider, PromptBuilder(), ReviewParser(), config.hooks["pre_commit"])
 
             # Load rules and filter by configured severities
             rule_engine = _create_rule_engine(config)
             severity_filter = config.hooks["pre_commit"].rules_filter.severities
-            # "all" means no filter
             if severity_filter == ["all"]:
                 severity_filter = None
             matched_rules = rule_engine.match(staged_files, severity_filter)
@@ -536,10 +573,13 @@ def check(
             if debug:
                 typer.echo(f"\n[DEBUG] Rules prompt:\n{rules_prompt}\n", err=True)
 
+            # Screen — reviews each file individually
             result = fast_screener.screen(diff, rules_prompt, staged_files)
 
-            logger.info("Screen result: action=%s, issues=%d, elapsed=%.1fs, reason=%s",
-                        result.action, len(result.issues), result.elapsed_seconds, result.reason)
+            logger.info("Screen result: action=%s, issues=%d, files=%d/%d, elapsed=%.1fs, reason=%s",
+                        result.action, len(result.issues),
+                        result.files_reviewed, result.files_total,
+                        result.elapsed_seconds, result.reason)
 
             if result.action == "BLOCK" and not no_block:
                 typer.echo("\n❌ Code review blocked - commit rejected", err=True)
@@ -548,7 +588,6 @@ def check(
                     for issue in result.issues:
                         typer.echo(f"  🔴 {issue.message}")
 
-                # Save report and send notification for blocked commits
                 report_md = _save_report(
                     tag="precommit-blocked",
                     status="BLOCKING",
@@ -571,7 +610,7 @@ def check(
                 )
                 raise typer.Exit(1)
             else:
-                typer.echo("✅ Code review passed")
+                typer.echo(f"✅ Code review passed ({result.files_reviewed} file(s) reviewed)")
                 if result.issues:
                     typer.echo("\n⚠️  Warnings found (but not blocking):")
                     for issue in result.issues:
@@ -585,7 +624,7 @@ def check(
                 raise typer.Exit(0)
 
         elif async_mode:
-            # Async post-commit review - full review of the commit
+            # Async post-commit review — per-file full review
             if not commit:
                 typer.echo("❌ Error: --commit is required for async mode", err=True)
                 raise typer.Exit(1)
@@ -615,84 +654,121 @@ def check(
 
             logger.info("Async review: commit=%s, files=%s", commit[:8], changed_files)
 
-            # Load rules (all severities for full review)
-            rule_engine = _create_rule_engine(config)
-            matched_rules = rule_engine.match(changed_files, None)
-            rules_prompt = rule_engine.format_for_prompt(matched_rules)
-
-            # Build memory reminders
-            memory = ReviewMemory(".ai-review/memory.json")
-            pending_warnings_text = ""
-            if config.memory.enabled:
-                reminders = []
-                for fp in changed_files:
-                    level = memory.get_reminder_level(fp)
-                    if level:
-                        reminders.append(memory.format_reminder(fp, level))
-                        memory.increment_remind_count(fp)
-                pending_warnings_text = "\n\n".join(reminders)
-
-            # Build full prompt
-            from ai_review.prompt.builder import PromptBuilder
-            prompt_builder = PromptBuilder()
-            prompt = prompt_builder.build_full(
-                diff=diff,
-                rules_prompt=rules_prompt,
-                pending_warnings_text=pending_warnings_text,
+            # Split by file, then group: large files individually, small files together
+            file_diffs = split_diff_by_file(diff)
+            batches = group_files_for_review(
+                file_diffs,
+                large_file_threshold=300,
+                group_max_lines=2000,
+                group_max_files=20,
             )
+            logger.info("Async review: %d files -> %d batches", len(file_diffs), len(batches))
 
-            if debug:
-                typer.echo(f"\n[DEBUG] Async prompt:\n{prompt[:3000]}\n", err=True)
-
-            # Call LLM with longer timeout
             timeout = (config.llm.openai_compatible.timeout if config.llm.backend == "openai_compatible"
                        else config.llm.ollama.timeout)
-            response = llm_provider.review(prompt, timeout=min(timeout * 2, 120))
 
-            if not response.success:
-                logger.warning("Async review LLM failed: %s", response.error)
-                raise typer.Exit(0)
+            all_issues = []
+            all_highlights = []
+            file_statuses = []
 
-            # Parse response
-            from ai_review.reviewer.parser import ReviewParser
+            memory = ReviewMemory(".ai-review/memory.json")
+            prompt_builder = PromptBuilder()
             parser = ReviewParser()
-            result = parser.parse(response.content)
+
+            for batch in batches:
+                # Merge batch diffs
+                batch_diff = "\n".join(fd.diff for fd in batch)
+                batch_files = [fd.filepath for fd in batch]
+                total_lines = sum(fd.line_count for fd in batch)
+
+                # Truncate if combined diff is too large
+                if total_lines > 2000:
+                    batch_diff = truncate_single_file_diff(batch_diff, max_lines=2000, max_chars=100000)
+
+                # Load rules for batch files
+                rule_engine = _create_rule_engine(config)
+                matched_rules = rule_engine.match(batch_files, None)
+                rules_prompt = rule_engine.format_for_prompt(matched_rules)
+
+                # Build memory reminders
+                pending_warnings_text = ""
+                if config.memory.enabled:
+                    reminders = []
+                    for fd in batch:
+                        level = memory.get_reminder_level(fd.filepath)
+                        if level:
+                            reminders.append(memory.format_reminder(fd.filepath, level))
+                            memory.increment_remind_count(fd.filepath)
+                    pending_warnings_text = "\n\n".join(reminders)
+
+                prompt = prompt_builder.build_full(
+                    diff=batch_diff,
+                    rules_prompt=rules_prompt,
+                    pending_warnings_text=pending_warnings_text,
+                )
+
+                if debug:
+                    typer.echo(f"\n[DEBUG] Batch: {', '.join(batch_files)} ({total_lines} lines)\n", err=True)
+
+                response = llm_provider.review(prompt, timeout=min(timeout * 2, 120))
+
+                if not response.success:
+                    logger.warning("Async review LLM failed for batch: %s", response.error)
+                    continue
+
+                result = parser.parse(response.content)
+
+                all_issues.extend(result.issues)
+                if result.highlights:
+                    all_highlights.extend(result.highlights)
+                file_statuses.append(result.status)
+
+                # Record to memory per file in batch
+                if config.memory.enabled and result.status != "PASS":
+                    for fd in batch:
+                        memory.record_warnings(fd.filepath, [
+                            {"rule_id": i.rule_id or "unknown", "message": i.message}
+                            for i in result.issues
+                        ])
+
+            # Aggregate results
+            worst_status = "PASS"
+            for s in file_statuses:
+                if s == "BLOCKING":
+                    worst_status = "BLOCKING"
+                    break
+                elif s == "WARNING" and worst_status != "BLOCKING":
+                    worst_status = "WARNING"
+
+            summary = f"Reviewed {len(file_diffs)} file(s) in {len(batches)} batch(es): {worst_status}"
 
             # Build suppression map for notification control
             suppressed_map = _build_suppressed_map(memory) if config.memory.enabled else {}
 
-            # Save report (all issues, even suppressed ones)
+            # Save report
             report_md = _save_report(
                 tag=commit[:8],
-                status=result.status,
-                issues=result.issues,
-                summary=result.summary,
-                highlights=result.highlights,
+                status=worst_status,
+                issues=all_issues,
+                summary=summary,
+                highlights=all_highlights,
                 files=changed_files,
                 commit=commit,
             )
 
-            # Record to memory
-            if config.memory.enabled and result.status != "PASS":
-                for fp in changed_files:
-                    memory.record_warnings(fp, [
-                        {"rule_id": i.rule_id or "unknown", "message": i.message}
-                        for i in result.issues
-                    ])
-
             # Send notification only if there are non-suppressed issues
-            if _should_notify(result.issues, changed_files, suppressed_map):
+            if _should_notify(all_issues, changed_files, suppressed_map):
                 from ai_review.output.notify import SystemNotifier
                 notifier = SystemNotifier()
-                if result.status == "BLOCKING":
-                    issue_summary = "; ".join(i.message for i in result.issues[:3])
+                if worst_status == "BLOCKING":
+                    issue_summary = "; ".join(i.message for i in all_issues[:3])
                     notifier.notify(
                         "AI Review: Issues Found",
                         f"Blocking in {commit[:8]}: {issue_summary}",
                         duration=15,
                     )
-                elif result.status == "WARNING":
-                    issue_summary = "; ".join(i.message for i in result.issues[:3])
+                elif worst_status == "WARNING":
+                    issue_summary = "; ".join(i.message for i in all_issues[:3])
                     notifier.notify(
                         "AI Review: Warnings",
                         f"Warnings in {commit[:8]}: {issue_summary}",
@@ -700,8 +776,8 @@ def check(
                     )
 
             if verbose:
-                typer.echo(f"\n📝 Status: {result.status}")
-                for issue in result.issues:
+                typer.echo(f"\n📝 Status: {worst_status}")
+                for issue in all_issues:
                     typer.echo(f"  {issue.severity}: {issue.message}")
                 typer.echo(f"\n📄 Report: {report_md}")
 
@@ -744,6 +820,12 @@ def check(
             if not diff:
                 typer.echo("✅ No changes to review")
                 raise typer.Exit(0)
+
+            # Truncate diff for manual review: same generous limits as post-commit
+            trunc_result = truncate_diff(diff, max_lines=2000, max_chars=100000, max_files=50)
+            if trunc_result.truncated:
+                typer.echo(f"  ⚡ Diff truncated: {trunc_result.reason}")
+            diff = trunc_result.diff
 
             logger.debug("Diff content:\n%s", diff[:3000])
 
@@ -795,7 +877,6 @@ def check(
             logger.debug("LLM response:\n%s", response.content[:3000])
 
             # Parse response
-            from ai_review.reviewer.parser import ReviewParser
             parser = ReviewParser()
             result = parser.parse(response.content)
 

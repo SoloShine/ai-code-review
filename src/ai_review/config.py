@@ -56,7 +56,7 @@ class RulesFilterConfig:
 @dataclass
 class HookConfig:
     """Pre-commit hook configuration."""
-    timeout: int = 30
+    timeout: int = 60
     block_on: List[str] = field(default_factory=lambda: ["CRITICAL", "ERROR"])
     context: bool = False
     rules_filter: RulesFilterConfig = field(default_factory=RulesFilterConfig)
@@ -153,7 +153,7 @@ MODE_DEFAULTS = {
     "strict": {
         "hooks": {
             "pre_commit": {
-                "timeout": 60,
+                "timeout": 90,
                 "block_on": ["CRITICAL", "ERROR", "WARNING"],
                 "context": True,
                 "rules_filter": {"severities": ["all"]},
@@ -170,7 +170,7 @@ MODE_DEFAULTS = {
     "balanced": {
         "hooks": {
             "pre_commit": {
-                "timeout": 30,
+                "timeout": 60,
                 "block_on": ["CRITICAL", "ERROR"],
                 "context": False,
                 "rules_filter": {"severities": ["error"]}

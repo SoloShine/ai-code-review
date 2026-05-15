@@ -1,6 +1,6 @@
 # AI Code Review 使用手册
 
-> 版本 0.1.0 · AI 驱动的代码审查工具，支持 Git Hook 集成、自定义规则、LLM 审查、通知中心
+> 版本 0.2.0 · AI 驱动的代码审查工具，支持 Git Hook 集成、自定义规则、LLM 审查、通知中心
 
 ---
 
@@ -27,6 +27,8 @@ AI Code Review 是一个本地运行的代码审查工具，通过接入 LLM（�
 |------|------|
 | **Pre-commit 拦截** | 提交前快速筛查，发现严重问题直接阻止提交 |
 | **Post-commit 深度审查** | 提交后异步执行完整审查，生成详细报告 |
+| **智能文件分组** | 大文件单独审查，小文件合并请求，自动平衡 LLM 调用次数和上下文质量 |
+| **Diff 三明治截断** | 超大 diff 保留头尾关键代码，中间用摘要替代，避免丢失边界上下文 |
 | **自定义规则** | YAML 格式规则文件，按文件类型自动匹配 |
 | **记忆系统** | 跨次审查跟踪重复问题，计算风险分数 |
 | **通知中心** | 终端 Inbox + HTML 仪表盘 + 系统弹窗三通道提醒 |
@@ -101,6 +103,7 @@ ai-review init
 - 创建 `.ai-review.yaml` 配置文件
 - 创建 `.ai-review/` 目录结构（含 `rules/` 子目录）
 - 安装 Git pre-commit 和 post-commit 钩子
+- 自动更新 `.gitignore`（忽略生成文件，保留 `rules/` 供版本控制）
 
 ### 2. 配置 LLM 后端
 
@@ -234,7 +237,7 @@ llm:
 
 hooks:
   pre_commit:
-    timeout: 30                       # 快速筛查超时（秒）
+    timeout: 60                       # 快速筛查超时（秒）
     block_on: ["CRITICAL", "ERROR"]   # 遇到这些级别的问题阻止提交
     rules_filter:
       severities: ["error"]           # pre-commit 只检查 error 级别规则
@@ -273,8 +276,8 @@ exclude:
 
 | 模式 | Pre-commit | Post-commit | Memory | 说明 |
 |------|-----------|-------------|--------|------|
-| **balanced** | 仅筛查 ERROR/CRITICAL，30s 超时 | 启用 | 启用 | 推荐日常使用 |
-| **strict** | 筛查所有级别（含 WARNING），60s 超时 | 禁用 | 禁用 | 严格模式，适合关键分支 |
+| **balanced** | 仅筛查 ERROR/CRITICAL，60s 超时 | 启用 | 启用 | 推荐日常使用 |
+| **strict** | 筛查所有级别（含 WARNING），90s 超时 | 禁用 | 禁用 | 严格模式，适合关键分支 |
 
 ---
 
@@ -611,6 +614,7 @@ src/ai_review/
 ├── cli.py                     # 主 CLI 入口（check/init/suppress/status）
 ├── cli_inbox.py               # Inbox 子命令（inbox list/show/read/dashboard）
 ├── config.py                  # 配置系统（分层合并、模式默认值）
+├── diff_utils.py              # Diff 拆分、智能分组、三明治截断
 ├── dashboard.py               # HTML 仪表盘生成器
 ├── inbox.py                   # Inbox 管理器（报告注册、已读状态）
 ├── memory/
@@ -622,7 +626,7 @@ src/ai_review/
 ├── prompt/
 │   └── builder.py             # Prompt 构建（fast/full 两种模式）
 ├── reviewer/
-│   ├── screener.py            # Pre-commit 快速筛查器
+│   ├── screener.py            # Pre-commit 快速筛查器（智能分组审查）
 │   └── parser.py              # LLM 输出解析（JSON 优先 + 文本回退）
 ├── rules/
 │   ├── loader.py              # 规则加载和文件匹配
@@ -659,11 +663,12 @@ src/ai_review/
 
 | 场景 | 典型耗时 | 说明 |
 |------|---------|------|
-| Pre-commit 筛查 | 5-15 秒 | 仅发送 diff + error 级别规则，prompt 较短 |
-| Post-commit 全量审查 | 10-30 秒 | 包含所有规则，返回详细报告和代码建议 |
+| Pre-commit 筛查 | 5-15 秒 | 智能分组：大文件单独请求，小文件合并；仅 error 级别规则 |
+| Post-commit 全量审查 | 10-30 秒 | 分组完整审查，返回详细报告和代码建议 |
 | 手动审查 | 10-30 秒 | 同全量审查 |
+| 批量重命名（200+ 文件） | < 1 秒 | 小文件自动合并，跳过文件数阈值直接放行 |
 
-> Pre-commit 超时默认 30 秒，超时自动放行（不阻止提交）。可在配置中调整 `hooks.pre_commit.timeout`。
+> Pre-commit 超时默认 60 秒，超时自动放行（不阻止提交）。大文件（>200 行）单独审查，小文件合并为单次 LLM 请求（最多 15 文件 / 500 行）。LLM 不可用时跳过剩余批次，不会逐个超时。可在配置中调整 `hooks.pre_commit.timeout`。
 
 ### LLM 故障处理
 
@@ -693,13 +698,16 @@ src/ai_review/
 
 ### 与 CI/CD 的关系
 
-本工具定位为**本地开发辅助**，在开发者提交代码时提供即时反馈，不替代 CI/CD 中的代码审查流程。建议将 `.ai-review/` 目录加入 `.gitignore`：
+本工具定位为**本地开发辅助**，在开发者提交代码时提供即时反馈，不替代 CI/CD 中的代码审查流程。`ai-review init` 会自动更新 `.gitignore`，仅忽略生成文件：
 
 ```gitignore
-# AI Code Review 本地数据
+# AI Code Review - generated files (rules/ are versioned)
 .ai-review/memory.json
+.ai-review/suppressions.json
 .ai-review/reports/
 ```
+
+`.ai-review/rules/` 目录下的规则文件会保留在版本控制中，方便团队共享审查规范。
 
 ### 常见问题
 
@@ -716,12 +724,12 @@ ls .git/hooks/post-commit
 
 **Q: 审查超时了？**
 
-Pre-commit 默认超时 30 秒。如果 LLM 响应较慢，可在 `.ai-review.yaml` 中增加超时：
+Pre-commit 默认超时 60 秒。如果 LLM 响应较慢，可在 `.ai-review.yaml` 中增加超时：
 
 ```yaml
 hooks:
   pre_commit:
-    timeout: 60
+    timeout: 90
 ```
 
 **Q: 如何临时跳过审查？**

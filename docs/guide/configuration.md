@@ -40,7 +40,7 @@ llm:
 hooks:
   # Pre-commit 钩子：提交前快速筛查
   pre_commit:
-    timeout: 30
+    timeout: 60
     block_on: ["CRITICAL", "ERROR"]
     rules_filter:
       severities: ["error"]
@@ -73,8 +73,8 @@ AI Code Review 提供两种内置模式，覆盖大多数使用场景：
 
 | 模式 | Pre-commit 行为 | Post-commit 行为 | 记忆系统 |
 | ---- | --------------- | ---------------- | -------- |
-| `balanced` | 仅拦截 ERROR/CRITICAL，超时 30 秒 | 启用 | 启用 |
-| `strict` | 拦截所有级别，超时 60 秒 | 禁用 | 禁用 |
+| `balanced` | 仅拦截 ERROR/CRITICAL，超时 60 秒 | 启用 | 启用 |
+| `strict` | 拦截所有级别，超时 90 秒 | 禁用 | 禁用 |
 
 - **balanced**：日常开发推荐。Pre-commit 仅对严重问题阻断，不影响开发节奏；Post-commit 异步完成深度审查。
 - **strict**：适合代码入库前的最终检查。所有级别问题均会拦截，确保代码质量。
